@@ -117,7 +117,7 @@ internal static class Launcher
     internal static Process StartWorker(string payload, bool selfTest)
     {
         string workspace = Path.Combine(payload, "workspace");
-        string script = Path.Combine(workspace, @"projects\my_app\tools\portable_agent.py");
+        string script = Path.Combine(workspace, "projects", BuildInfo.ProjectName, "tools", "portable_agent.py");
         var start = new ProcessStartInfo {
             FileName = Path.Combine(payload, @"runtime\python.exe"),
             Arguments = "-X utf8 \"" + script + "\"" + (selfTest ? " --self-test" : ""),
@@ -159,7 +159,7 @@ internal sealed class SyncWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         Icon = icon;
 
-        logFolder = Path.Combine(payload, @"workspace\projects\my_app\.gateway\agent-pet");
+        logFolder = Path.Combine(payload, "workspace", "projects", BuildInfo.ProjectName, ".gateway", "agent-pet");
         Directory.CreateDirectory(logFolder);
         File.Delete(Path.Combine(logFolder, "stop"));
         File.Delete(Path.Combine(logFolder, "status.json"));

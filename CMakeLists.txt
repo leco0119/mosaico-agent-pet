@@ -14,7 +14,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${MOSAICO_UTILS_ROOT}/mosaico-tools/components/esp_mosaico_gsp_bundle"
     "${MOSAICO_UTILS_ROOT}/mosaico-tools/components/esp_mosaico_gsp_iris")
 include("${MOSAICO_UTILS_ROOT}/esp-mosaico-vibe-mode/cmake/mosaico_idf_project.cmake")
-project(my_app VERSION 1.2.3)
+project(Agent_Pet VERSION 1.2.3)
 # Match the activation version on both official-cloud requests, keeping the
 # registry component and the other HTTP clients untouched.
 idf_component_get_property(pet_xiaozhi_dir espressif__esp_xiaozhi COMPONENT_DIR)

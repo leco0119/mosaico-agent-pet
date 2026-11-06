@@ -161,13 +161,18 @@ class AgentPetTests(unittest.TestCase):
     def test_cached_identity_and_other_firmware_are_rejected(self):
         client = host_runtime.MosaicoClient(TEST_DEVICE_ID)
         live = {"device_id": client.device_id, "stale": False,
-                "firmware_mode": "normal", "project_name": "my_app"}
+                "firmware_mode": "normal", "project_name": "Agent_Pet"}
         with patch.object(client, "call", return_value={"device": live}):
+            self.assertIs(client.live_status(), live)
+            live["project_name"] = "my_app"
             self.assertIs(client.live_status(), live)
             live["stale"] = True
             with self.assertRaises(RuntimeError):
                 client.live_status()
             live["stale"] = False
+            live["project_name"] = "another_app"
+            with self.assertRaises(RuntimeError):
+                client.live_status()
             live["project_name"] = "vibe-mode"
             live["firmware_mode"] = "recovery"
             with self.assertRaises(RuntimeError):
@@ -208,7 +213,7 @@ class AgentPetTests(unittest.TestCase):
         client = host_runtime.MosaicoClient(None)
         client.endpoint = "usb:one"
         device = {"device_id": TEST_DEVICE_ID, "stale": False,
-                  "firmware_mode": "normal", "project_name": "my_app", "board_id": "esp-mosaico"}
+                  "firmware_mode": "normal", "project_name": "Agent_Pet", "board_id": "esp-mosaico"}
         response = {"device": device}
         with patch.object(client, "call", return_value=response) as call, \
                 patch.object(client, "start_lease"), patch.object(client, "rpc", return_value="{}") as rpc:

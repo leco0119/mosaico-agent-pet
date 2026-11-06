@@ -101,7 +101,8 @@ def package_workspace(archive: ZipFile) -> None:
         )
     for file in files:
         archive.write(file, f"workspace/{file.relative_to(WORKSPACE).as_posix()}")
-    archive.write(HERE / "portable_agent.py", "workspace/projects/my_app/tools/portable_agent.py")
+    project_path = PROJECT.relative_to(WORKSPACE).as_posix()
+    archive.write(HERE / "portable_agent.py", f"workspace/{project_path}/tools/portable_agent.py")
 
 
 def compile_launcher(payload: Path, output: Path) -> None:
@@ -112,7 +113,10 @@ def compile_launcher(payload: Path, output: Path) -> None:
     icon = HERE / "PetIdle.ico"
     build_info = payload.with_name("BuildInfo.cs")
     build_info.write_text(
-        f'internal static class BuildInfo {{ internal const string Id = "{sha256(payload)[:16]}"; }}\n',
+        "internal static class BuildInfo {\n"
+        f'    internal const string Id = "{sha256(payload)[:16]}";\n'
+        f'    internal const string ProjectName = "{PROJECT.name}";\n'
+        "}\n",
         encoding="utf-8",
     )
     subprocess.run(

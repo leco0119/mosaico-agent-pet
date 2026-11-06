@@ -10,7 +10,7 @@
 #include "nvs_flash.h"
 #include "ui_bundle.h"
 
-static const char *TAG = "my_app";
+static const char *TAG = "Agent_Pet";
 
 /* The composition root retains owned handles, never controller internals. */
 static struct {

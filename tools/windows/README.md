@@ -7,7 +7,7 @@ the Python ZIP checksum and the Iris requirements fingerprint.
 
 Run the builder from the Mosaico workspace root.
 
-    python projects/my_app/tools/windows/build.py --python-embed <python-embed.zip> --iris-environment <iris-py3.14-directory> --output <MosaicoAgentPet.exe>
+    python projects/Agent_Pet/tools/windows/build.py --python-embed <python-embed.zip> --iris-environment <iris-py3.14-directory> --output <MosaicoAgentPet.exe>
 
 Copy the EXE to the target Windows computer and run it. The launcher stores
 the unpacked runtime and logs under the current user's LocalAppData. Its

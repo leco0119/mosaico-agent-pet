@@ -12,9 +12,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
-PROJECT = ROOT / "projects" / "my_app"
+PROJECT = Path(__file__).resolve().parents[1]
+ROOT = PROJECT.parents[1]
 RUNTIME = PROJECT / ".gateway" / "agent-pet"
+PROJECT_NAME = "Agent_Pet"
+SUPPORTED_FIRMWARE_NAMES = (PROJECT_NAME, "my_app")  # Pre-rename boards can still sync.
 DEFAULT_DEVICE = "auto"
 MOSAICO_USB_ID = (0x303A, 0x4002)
 
@@ -122,8 +124,8 @@ class MosaicoClient:
                 break
         if data.get("device_id") != self.device_id or data.get("stale", True):
             raise RuntimeError("Waiting for live identity from the selected Mosaico")
-        if data.get("firmware_mode") != "normal" or data.get("project_name") != "my_app":
-            raise RuntimeError("Selected Mosaico is not running Agent Pet (my_app)")
+        if data.get("firmware_mode") != "normal" or data.get("project_name") not in SUPPORTED_FIRMWARE_NAMES:
+            raise RuntimeError(f"Selected Mosaico is not running {PROJECT_NAME}")
         return data
 
     def start_lease(self) -> None:
