@@ -1,0 +1,21 @@
+diff --git a/mosaico-tools/tools/mosaico_cli/session_runtime.py b/mosaico-tools/tools/mosaico_cli/session_runtime.py
+index 5009fd8..f4dd5ee 100644
+--- a/mosaico-tools/tools/mosaico_cli/session_runtime.py
++++ b/mosaico-tools/tools/mosaico_cli/session_runtime.py
+@@ -235,13 +235,15 @@ class SessionScope:
+                 local.prepare_storage()
+                 log = local.log_file.open("a", encoding="utf-8")
+                 try:
++                    # Windows venv redirectors launch the actual interpreter
++                    # as a child. Keep a windowless console for it to inherit.
+                     process = subprocess.Popen([
+                         str(python), str(script), "web", "--listen", "127.0.0.1", "--port", "0",
+                         "--instance-id", instance_id, *local.launch_arguments(session_id), "--no-tls",
+                     ], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                         env=environment, close_fds=True,
+                         **({"start_new_session": True} if os.name != "nt" else {
+-                            "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
++                            "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                         }))
+                 except OSError as error:
+                     raise EnvironmentError(f"Could not launch this project's Gateway: {error}") from error
