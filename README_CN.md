@@ -81,3 +81,7 @@ Mosaico。它可以缩到系统托盘，也可以随 Windows 登录启动。
 
 [整合验证记录](docs/evidence/codex-usage/README.md)包含测试结果、模拟器截图、
 新版助手及已完成的实机验收。
+
+## 许可证
+
+本项目采用 Apache License 2.0 许可证，详见 [LICENSE](LICENSE)。
