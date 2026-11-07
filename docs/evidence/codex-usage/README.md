@@ -68,7 +68,7 @@ Integration-stage EXE SHA-256 (superseded by the parallel-task release):
 The original local EXE is preserved in
 `.codex-runs/windows-build/MosaicoAgentPet-before-integration.exe`.
 
-The complete local firmware bundle, `build/Agent_Pet-system-update.irisfw`,
+The complete [firmware bundle](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/Agent_Pet-system-update.irisfw),
 was built and inspected successfully (3,842,011 bytes). It contains the unchanged
 partition table, application (2,460,128 bytes), and both scenes' UI resource image
 (4,200,784 bytes). It contains no NVS image. Build and inspection evidence:

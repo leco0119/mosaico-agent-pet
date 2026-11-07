@@ -19,7 +19,11 @@ reads preserve values and their original timestamp as historical data.
 On a PC response timeout, the footer displays `PC 未响应 · 历史数据`; the
 stored values and timestamp remain unchanged.
 
-See [Windows helper packaging](tools/windows/README.md) for a standalone EXE build.
+Download the [Windows helper](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/MosaicoAgentPet.exe)
+and [matching firmware bundle](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/Agent_Pet-system-update.irisfw).
+The [release page](https://github.com/leco0119/mosaico-agent-pet/releases/tag/v2026.11.07)
+includes instructions and SHA-256 checksums. See [Windows helper packaging](tools/windows/README.md)
+to build the EXE from source.
 
 ## Workspace setup
 

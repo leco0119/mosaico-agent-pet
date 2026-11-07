@@ -61,6 +61,7 @@ desktop activity modules imported, and USB discovery successful. Installed
 ## Installed artifact
 
 - Desktop: `%USERPROFILE%/Desktop/MosaicoAgentPet.exe`
+- Distribution: [MosaicoAgentPet.exe](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/MosaicoAgentPet.exe).
 - Local distribution copy: `tools/windows/MosaicoAgentPet.exe` (excluded from Git).
 - SHA-256: `16a1a1795a6b2267b7fa6505288ad427987d3d4bc21b59bb4987e88596d755ea`
 - Payload: `%LOCALAPPDATA%/MosaicoAgentPet/payload-5a67ea0c0bf4f809`

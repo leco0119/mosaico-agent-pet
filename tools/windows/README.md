@@ -1,7 +1,10 @@
 # Windows Agent Pet helper
 
-The standalone `MosaicoAgentPet.exe` is a generated distribution artifact and
-is not stored in the source tree. Build it using the instructions below.
+Download the ready-to-run [MosaicoAgentPet.exe](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/MosaicoAgentPet.exe).
+The [release page](https://github.com/leco0119/mosaico-agent-pet/releases/tag/v2026.11.07)
+also provides matching firmware and SHA-256 checksums.
+The EXE is distributed as a release asset, outside the source tree. To rebuild
+it, follow the instructions below.
 
 Build on Windows x64 with Python 3.14 and the Windows .NET Framework C# compiler.
 The input files are the official Python 3.14.10 x64 embeddable ZIP and the

@@ -15,6 +15,9 @@ PandaCode 任务状态。仍在工作的任务优先显示，不会被另一个�
 数字和原更新时间，并标记为历史数据。
 PC 响应超时时，页脚改为显示“PC 未响应 · 历史数据”；已保存的数字和更新时间不变。
 
+下载 [Windows 同步助手](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/MosaicoAgentPet.exe)
+和[配套固件包](https://github.com/leco0119/mosaico-agent-pet/releases/download/v2026.11.07/Agent_Pet-system-update.irisfw)。
+[发布页](https://github.com/leco0119/mosaico-agent-pet/releases/tag/v2026.11.07)提供使用说明和 SHA-256 校验文件。
 独立 EXE 的构建方法见 [Windows 同步助手说明](tools/windows/README.md)。
 
 采集用量时，电脑需安装并登录 Codex，窗口可以关闭。助手通过官方 app-server 读取账户数据，
