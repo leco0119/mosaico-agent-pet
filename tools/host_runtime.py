@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -19,6 +20,18 @@ PROJECT_NAME = "Agent_Pet"
 SUPPORTED_FIRMWARE_NAMES = (PROJECT_NAME, "my_app")  # Pre-rename boards can still sync.
 DEFAULT_DEVICE = "auto"
 MOSAICO_USB_ID = (0x303A, 0x4002)
+
+
+def device_serial(device_id: object) -> str | None:
+    if not isinstance(device_id, str) or len(device_id) < 12:
+        return None
+    try:
+        value = bytes.fromhex(device_id)
+    except ValueError:
+        return None
+    if value.hex() != device_id.lower():
+        return None
+    return value[-6:].hex().upper()
 
 
 def quiet_process_options() -> dict:
@@ -49,6 +62,8 @@ class MosaicoClient:
         self.configured_device = None if device_id == DEFAULT_DEVICE else device_id
         self.device_id = self.configured_device
         self.endpoint = None
+        self._candidate = None
+        self._verified_device_id = None
         self.lease: subprocess.Popen | None = None
         self.lease_log = None
 
@@ -77,33 +92,77 @@ class MosaicoClient:
         raise RuntimeError("Mosaico CLI returned no JSON response")
 
     def present(self) -> bool:
+        self.endpoint = None
+        self._candidate = None
         data = self.call("list", "--details", select=False)
         if self.configured_device is None:
             self.device_id = None
-            self.endpoint = None
             candidates = {
-                entry["endpoint"] for entry in data.get("endpoints", [])
+                entry["endpoint"]: entry for entry in data.get("endpoints", [])
                 if entry.get("present") and entry.get("endpoint", "").startswith("usb:")
                 and entry.get("link_role") == "control"
                 and (entry.get("vid"), entry.get("pid")) == MOSAICO_USB_ID
             }
             if len(candidates) > 1:
                 raise RuntimeError("检测到多块 Mosaico，请只连接要同步的那一块。")
-            self.endpoint = next(iter(candidates), None)
-            return self.endpoint is not None
-        serial = bytes.fromhex(self.configured_device)[-6:].hex().upper()
-        return any(endpoint.get("present") and
-                   str(endpoint.get("serial_number", "")).upper() == serial
-                   for endpoint in data.get("endpoints", []))
+            candidate = next(iter(candidates.values()), None)
+            if candidate is None:
+                return False
+            if self._verified_device_id and str(candidate.get("serial_number", "")).upper() != device_serial(self._verified_device_id):
+                return False
+        else:
+            serial = device_serial(self.configured_device)
+            matches = [entry for entry in data.get("endpoints", []) if serial and
+                       entry.get("present") and str(entry.get("serial_number", "")).upper() == serial]
+            candidate = next((entry for entry in matches if entry.get("link_role") == "control"),
+                             next(iter(matches), None))
+            if candidate is None:
+                return False
+        self.endpoint = candidate.get("endpoint")
+        self._candidate = candidate
+        return True
+
+    def _reconcile_orphaned_owner(self) -> str | None:
+        candidate = self._candidate or {}
+        ownership = candidate.get("ownership")
+        if not isinstance(ownership, dict):
+            return
+        device_id = ownership.get("device_id")
+        serial = device_serial(device_id)
+        expected_device = self.configured_device or self._verified_device_id
+        if (not isinstance(self.endpoint, str) or not self.endpoint.startswith("usb:")
+                or candidate.get("link_role") != "control"
+                or (candidate.get("vid"), candidate.get("pid")) != MOSAICO_USB_ID
+                or candidate.get("busy_reasons")
+                or ownership.get("owner_alive") is not False
+                or ownership.get("state") != "owned"
+                or "transfer_id" not in ownership or ownership["transfer_id"] is not None
+                or not isinstance(ownership.get("owner"), str) or not ownership["owner"]
+                or candidate.get("owner_session_id") != ownership["owner"]
+                or ownership.get("resource") != self.endpoint
+                or serial is None or serial != str(candidate.get("serial_number", "")).upper()
+                or (expected_device and device_id.lower() != expected_device.lower())):
+            return
+        # Discovery is only a hint. The public command rechecks session liveness,
+        # reservations and every physical endpoint lock atomically before cleanup.
+        # A refusal propagates, so this attempt cannot proceed to claim the port.
+        self.call("reconcile", "--device-id", device_id, select=False)
+        self._candidate = None
+        logging.info("Cleared inactive USB ownership for %s; reconnecting", device_id)
+        return device_id
 
     def connect_auto(self) -> dict:
         if self.endpoint is None:
             raise RuntimeError("正在等待 Mosaico USB 连接。")
+        reconciled_device = self._reconcile_orphaned_owner()
         claim = self.call("claim", "--endpoint", self.endpoint, select=False)
         device = claim.get("device")
         device_id = device.get("device_id") if isinstance(device, dict) else None
         if not isinstance(device_id, str) or not device_id:
             raise RuntimeError(claim.get("message") or "无法握手确认这块 Mosaico。")
+        expected_device = self._verified_device_id or reconciled_device
+        if expected_device and device_id.lower() != expected_device.lower():
+            raise RuntimeError("正在等待原来的 Mosaico 重新连接。")
         self.device_id = device_id
         self.start_lease()
         status = self.live_status()
@@ -112,6 +171,7 @@ class MosaicoClient:
         pet = json.loads(self.rpc("0x0002"))
         if not isinstance(pet, dict) or not {"anim", "connected", "updates"} <= pet.keys():
             raise RuntimeError("当前设备没有运行 Agent Pet 桌宠。")
+        self._verified_device_id = device_id
         return status
 
     def live_status(self) -> dict:
@@ -129,6 +189,7 @@ class MosaicoClient:
         return data
 
     def start_lease(self) -> None:
+        self._reconcile_orphaned_owner()
         if self.lease is not None and self.lease.poll() is None:
             return
         if self.device_id is None:

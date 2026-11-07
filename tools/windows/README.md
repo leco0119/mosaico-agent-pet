@@ -31,6 +31,18 @@ It uses the public Mosaico CLI for USB selection, live validation and the
 existing screen status RPC. Its runtime seed follows the CLI's dependency
 fingerprint, and device ownership remains with ESP-Iris Gateway.
 
+USB reconnects also recover an inactive session's stale ownership automatically.
+The helper requires an explicitly dead owner, an ordinary claim with no transfer
+reservation, and a device identity matching the selected USB control endpoint.
+It calls the public `mosaico.py iris reconcile` command, which rechecks session
+liveness and physical port locks before clearing anything. Active owners, busy
+ports, transfers, ambiguous devices and incomplete evidence are left alone.
+A refusal prevents that connection attempt. No Gateway is killed, no ownership
+database is edited, and the board is not reflashed. Successful recovery is logged
+as `Cleared inactive USB ownership ...; reconnecting` before `USB connected`.
+Once automatic selection verifies a board, reconnects keep following that board
+until the helper is restarted.
+
 The same EXE now bundles `usage_sync.py` and the Codex account reader. Account
 queries run on one background worker; only the pet loop uses the USB client.
 Refreshes occur on startup, reconnect, screen request and every 300 seconds.
