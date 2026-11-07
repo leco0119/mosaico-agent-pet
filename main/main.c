@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "app_display.h"
 #include "app_pet.h"
+#include "app_usage.h"
+#include "app_usage_link.h"
 #include "app_voice.h"
 #include "esp_iris.h"
 #include "esp_log.h"
@@ -16,6 +18,7 @@ static const char *TAG = "Agent_Pet";
 static struct {
     esp_gsp_handle_t ui;
     app_pet_handle_t controller;
+    app_usage_handle_t usage;
     app_wifi_handle_t wifi;
     app_voice_handle_t voice;
 } application;
@@ -43,11 +46,14 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_gsp_esp_lcd_start(&config, &display, &application.ui));
     ESP_ERROR_CHECK(iris_screen_mirror_attach(application.ui));
     ESP_ERROR_CHECK(app_pet_create(application.ui, &application.controller));
+    ESP_ERROR_CHECK(app_usage_create(application.ui, &application.usage));
+    ESP_ERROR_CHECK(app_usage_link_start(application.ui, application.usage));
     /* GSP retains the callback context. Device UI/controller live until reboot;
      * teardown requires quiescing GSP before app_pet_destroy(), then closing UI. */
     ESP_ERROR_CHECK_WITHOUT_ABORT(app_wifi_start(&application.wifi));
     ESP_ERROR_CHECK_WITHOUT_ABORT(app_voice_start(&application.voice, application.wifi));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(status_link_start(application.controller, application.ui,
-                                                  application.voice, application.wifi));
+    ESP_ERROR_CHECK(status_link_start_with_usage(application.controller, application.ui,
+        application.voice, application.wifi, application.usage,
+        app_usage_link_refresh_sequence, NULL));
     ESP_LOGI(TAG, "Agent Pet ready");
 }

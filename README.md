@@ -2,9 +2,24 @@
 
 [简体中文](README_CN.md)
 
-A desk pet for ESP-Mosaico that displays the most recently active Codex,
-WorkBuddy, Claude Code or PandaCode session. It also supports XiaoZhi voice,
+A desk pet for ESP-Mosaico that combines concurrent Codex, ChatGPT desktop,
+WorkBuddy, Claude Code and PandaCode activity. Working tasks take precedence
+over completed tasks. It also supports XiaoZhi voice,
 Wi-Fi selection and volume control on the board.
+
+The second screen is the Codex usage dashboard: swipe left from the pet, or tap
+`1/2 ›`. It shows **remaining** quota, reset time and official lifetime tokens.
+Swipe right or tap `‹ 桌宠` to return. Wi-Fi and volume pages keep their existing
+controls. Pet activity continues to sync while the dashboard is visible.
+
+The same Windows helper collects account usage on startup, reconnect, a screen
+refresh tap and every five minutes. Its independent account worker cannot block
+pet heartbeats. Boot and connection restore the last saved values first; failed
+reads preserve values and their original timestamp as historical data.
+On a PC response timeout, the footer displays `PC 未响应 · 历史数据`; the
+stored values and timestamp remain unchanged.
+
+See [Windows helper packaging](tools/windows/README.md) for a standalone EXE build.
 
 ## Workspace setup
 
@@ -42,15 +57,36 @@ and can start at Windows sign-in. For development, run
 `python projects/Agent_Pet/tools/agent_pet.py`. When several boards are attached,
 pass the intended board's full Device ID with `--device-id`.
 
+For usage collection, Codex must be installed and signed in; its window may be closed. The helper uses
+the official app-server account read methods. No separate usage_panel watcher
+is needed. Display-only cache lives at `%LOCALAPPDATA%/MosaicoAgentPet/usage.json`
+and survives EXE updates. A valid old `mosaico-usage/usage.json` is migrated on
+first use. No credentials or raw account responses are cached.
+
+ChatGPT task activity requires the Codex desktop app to remain running; its
+window can be minimized. The helper reads the app's live task list every three
+seconds, combines it with all local session logs, and keeps working while any
+task is active. A short status-read failure retains the last state for up to
+15 seconds. Closing the app clears its live task source. This desktop-local
+interface is version dependent; local log detection remains available if it
+changes. See the [parallel activity evidence](docs/evidence/parallel-activity-2026-11-07.md).
+
 ## Layout
 
-- `components/app_pet`: portable C controller, authored GSP scene, Iris mailbox
-  adapter, and native simulator adapter.
+- `components/app_pet`: portable pet/usage controllers, two GSP scenes, shared
+  event routing, pet Iris adapter, and native simulator adapter.
+- `components/app_usage_link`: usage RPC delivery, refresh counter and retained NVS cache.
 - `components/app_wifi` owns network scanning, connection and the recent network store.
 - `components/app_display`: product display/touch adapter.
 - [`components/app_voice`](components/app_voice/README.md) owns XiaoZhi enrollment and AI-key voice turns.
 - `main`: platform startup and dependency composition.
-- `tools/agent_pet.py`: session-log classification.
+- `tools/agent_pet.py`: session-log classification and concurrent activity selection.
+- `tools/desktop_activity.py`: read-only live task status from the Windows desktop app.
 - `tools/pet_runner.py`: single instance, USB reconnects and heartbeats.
 - `tools/host_runtime.py`: hidden child processes and public CLI transport.
+- `tools/usage_sync.py` and `tools/usage_agent`: background account collection,
+  persistent display cache and usage delivery through the existing pet connection.
 - `tools/install-agent-pet.ps1`: current-user login shortcut and start/stop/status.
+
+See [integration verification](docs/evidence/codex-usage/README.md) for test results,
+simulator captures and completed hardware acceptance.

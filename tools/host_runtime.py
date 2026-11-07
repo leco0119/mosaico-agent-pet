@@ -56,14 +56,14 @@ class MosaicoClient:
         return [console_python(), "-X", "utf8", str(ROOT / "mosaico.py"), "--json", "iris", *args,
                 "--project", str(PROJECT)]
 
-    def call(self, *args: str, select: bool = True) -> dict:
+    def call(self, *args: str, select: bool = True, timeout: float = 50) -> dict:
         if select:
             if self.device_id is None:
                 raise RuntimeError("No live Mosaico has been selected")
             args += ("--device-id", self.device_id)
         result = subprocess.run(self.argv(*args), cwd=ROOT, stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, encoding="utf-8",
-                                errors="replace", env=cli_environment(), timeout=50,
+                                errors="replace", env=cli_environment(), timeout=timeout,
                                 **quiet_process_options())
         if result.returncode:
             raise RuntimeError((result.stderr or result.stdout).strip()[-800:])
@@ -146,11 +146,11 @@ class MosaicoClient:
             self.lease_log = None
             raise
 
-    def rpc(self, method: str, payload: str = "") -> str:
-        args = ["rpc", "0x5354", method]
+    def rpc(self, method: str, payload: str = "", *, service: str = "0x5354", timeout: float = 8) -> str:
+        args = ["rpc", service, method]
         if payload:
             args += ["--payload", payload]
-        data = self.call(*args)
+        data = self.call(*args, timeout=timeout)
         encoded = data.get("response", {}).get("payload_base64")
         if encoded is None:
             raise RuntimeError("Agent Pet RPC response is missing")

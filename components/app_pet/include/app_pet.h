@@ -27,5 +27,7 @@ void app_pet_show_voice(app_pet_handle_t pet, const char *phrase,
                         const char *detail, unsigned animation, bool voice_ready);
 /* Copy diagnostics on the UI task or after dispatch stops. */
 esp_gsp_err_t app_pet_read(app_pet_handle_t pet, app_pet_snapshot_t *out);
+/* Keep receiving state off-screen; repaint the latest host/voice view on return. */
+void app_pet_set_active(app_pet_handle_t pet, bool active);
 /* Stop timers before freeing; ui outlives *pet. Retains it on failure. */
 esp_gsp_err_t app_pet_destroy(app_pet_handle_t *pet);

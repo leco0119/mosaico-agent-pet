@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define GSP_BUNDLE_ENABLE_LEGACY_NAMES 1
+#define GSP_BUNDLE_ENABLE_RAW_IDS 1
 #include "bundle_gsp.h"
 
 typedef enum { HOME, WIFI, PASSWORD, VOLUME, BINDING } page_t;
@@ -27,6 +27,7 @@ struct pet_settings {
     app_wifi_snapshot_t wifi;
     app_voice_snapshot_t voice;
     bool initialized;
+    bool active;
     bool showed_binding;
     bool joining;
     bool password_visible;
@@ -108,12 +109,15 @@ static void set_page(pet_settings_handle_t settings, page_t page)
     visible[settings->page](settings->ui, false);
     settings->page = page;
     visible[page](settings->ui, true);
-    settings->ops.navigation(settings->ctx, page != HOME);
+    esp_gsp_set_swipe_enabled(settings->ui, !settings->active || page == HOME);
+    settings->ops.navigation(settings->ctx, settings->active && page != HOME);
 }
 
 static gsp_err_t wifi_row(esp_gsp_handle_t ui, esp_gsp_row_t row, uint32_t index, void *ctx)
 {
     pet_settings_handle_t settings = ctx;
+    /* A queued native row request can outlive navigation to the other scene. */
+    if (!settings->active) return GSP_OK;
     if (index >= settings->wifi.count) {
         return esp_gsp_row_text(ui, row, "") == ESP_GSP_OK ? GSP_OK : GSP_ERR_INVALID_ARG;
     }
@@ -307,11 +311,9 @@ static void open_binding(pet_settings_handle_t settings, page_t back)
     set_page(settings, BINDING);
 }
 
-static void on_event(esp_gsp_handle_t ui, const esp_gsp_event_t *event, void *ctx)
+void pet_settings_handle_event(pet_settings_handle_t settings, const esp_gsp_event_t *event)
 {
-    (void)ui;
-    pet_settings_handle_t settings = ctx;
-    if (event->type != ESP_GSP_EVENT_CALL) return;
+    if (!settings || !event || event->type != ESP_GSP_EVENT_CALL || event->scene_id != 0) return;
     switch (event->action_id) {
     case GSP_PET_ACT_ID_OPEN_WIFI:
         set_page(settings, WIFI);
@@ -383,19 +385,13 @@ esp_gsp_err_t pet_settings_create(esp_gsp_handle_t ui, const pet_settings_ops_t 
     settings->ui = ui;
     settings->ops = *ops;
     settings->ctx = ctx;
+    settings->active = true;
     settings->voice.volume = APP_VOICE_DEFAULT_VOLUME;
     settings->last_audible = APP_VOICE_DEFAULT_VOLUME;
-    esp_gsp_err_t err = esp_gsp_on_event(ui, on_event, settings);
-    if (err == ESP_GSP_OK) {
-        settings->list = esp_gsp_list_bind_component(ui, GSP_OBJ_KEY_WIFI_LIST, wifi_row, settings);
-        if (settings->list == ESP_GSP_LIST_NONE) {
-            esp_gsp_on_event(ui, NULL, NULL);
-            err = ESP_GSP_ERR_NO_MEM;
-        }
-    }
-    if (err != ESP_GSP_OK) {
+    settings->list = esp_gsp_list_bind_component(ui, GSP_PET_OBJ_KEY_WIFI_LIST, wifi_row, settings);
+    if (settings->list == ESP_GSP_LIST_NONE) {
         free(settings);
-        return err;
+        return ESP_GSP_ERR_NO_MEM;
     }
     *out = settings;
     return ESP_GSP_OK;
@@ -405,6 +401,12 @@ void pet_settings_update(pet_settings_handle_t settings, const app_wifi_snapshot
                          const app_voice_snapshot_t *voice)
 {
     if (!settings) return;
+    if (!settings->active) {
+        settings->wifi = *wifi;
+        settings->voice = *voice;
+        settings->initialized = false;
+        return;
+    }
     bool wifi_changed = !settings->initialized || wifi->revision != settings->wifi.revision;
     bool voice_changed = !settings->initialized || voice->revision != settings->voice.revision;
     if (!wifi_changed && !voice_changed) return;
@@ -438,7 +440,7 @@ void pet_settings_update(pet_settings_handle_t settings, const app_wifi_snapshot
     }
     bool pending_binding = voice->state == APP_VOICE_BINDING;
     gsp_pet_bind_shortcut_set_visible(settings->ui, pending_binding);
-    if (pending_binding && !settings->showed_binding && voice->binding_code[0] &&
+    if (settings->active && pending_binding && !settings->showed_binding && voice->binding_code[0] &&
         (settings->page == HOME || settings->page == WIFI) && !settings->joining) {
         open_binding(settings, settings->page);
     }
@@ -454,4 +456,16 @@ void pet_settings_destroy(pet_settings_handle_t settings)
     if (!settings) return;
     clear_password(settings);
     free(settings);
+}
+
+void pet_settings_set_active(pet_settings_handle_t settings, bool active)
+{
+    if (!settings) return;
+    settings->active = active;
+    esp_gsp_set_swipe_enabled(settings->ui, !active || settings->page == HOME);
+    settings->ops.navigation(settings->ctx, active && settings->page != HOME);
+    if (active) {
+        settings->initialized = false;
+        pet_settings_update(settings, &settings->wifi, &settings->voice);
+    }
 }

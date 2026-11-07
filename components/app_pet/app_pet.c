@@ -2,6 +2,7 @@
 #include "app_pet.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "bundle_gsp.h"
 
@@ -24,6 +25,8 @@ struct app_pet {
     app_pet_snapshot_t snapshot;
     unsigned heartbeat_age;
     pet_host_view_t host;
+    pet_host_view_t view;
+    bool active;
     bool showing_voice;
     bool voice_ready;
 };
@@ -47,13 +50,25 @@ static void select_animation(app_pet_handle_t pet, unsigned animation)
     pet->snapshot.animation = animation;
 }
 
+static void paint(app_pet_handle_t pet)
+{
+    if (!pet->active) return;
+    pet->snapshot.last_error = ESP_GSP_OK;
+    select_animation(pet, pet->view.animation);
+    remember(pet, gsp_pet_st_title_set_text(pet->ui, pet->view.title));
+    remember(pet, gsp_pet_st_phrase_set_text(pet->ui, pet->view.phrase));
+    remember(pet, gsp_pet_st_detail_set_text(pet->ui, pet->view.detail));
+}
+
 static void render(app_pet_handle_t pet, const char *title, const char *phrase,
                    const char *detail, unsigned animation)
 {
-    if (pet->snapshot.animation != animation) select_animation(pet, animation);
-    remember(pet, gsp_pet_st_title_set_text(pet->ui, title));
-    remember(pet, gsp_pet_st_phrase_set_text(pet->ui, phrase));
-    remember(pet, gsp_pet_st_detail_set_text(pet->ui, detail));
+    snprintf(pet->view.title, sizeof(pet->view.title), "%s", title ? title : "");
+    snprintf(pet->view.phrase, sizeof(pet->view.phrase), "%s", phrase ? phrase : "");
+    snprintf(pet->view.detail, sizeof(pet->view.detail), "%s", detail ? detail : "");
+    pet->view.animation = animation;
+    pet->snapshot.animation = animation;
+    paint(pet);
 }
 
 static void render_host(app_pet_handle_t pet)
@@ -93,6 +108,7 @@ esp_gsp_err_t app_pet_create(esp_gsp_handle_t ui, app_pet_handle_t *out)
     app_pet_handle_t pet = calloc(1, sizeof(*pet));
     if (!pet) return ESP_GSP_ERR_NO_MEM;
     pet->ui = ui;
+    pet->active = true;
     select_animation(pet, 0);
     disconnected(pet);
     if (pet->snapshot.last_error != ESP_GSP_OK) {
@@ -168,6 +184,13 @@ esp_gsp_err_t app_pet_read(app_pet_handle_t pet, app_pet_snapshot_t *out)
     if (!pet || !out) return ESP_GSP_ERR_INVALID_ARG;
     *out = pet->snapshot;
     return ESP_GSP_OK;
+}
+
+void app_pet_set_active(app_pet_handle_t pet, bool active)
+{
+    if (!pet) return;
+    pet->active = active;
+    if (active) paint(pet);
 }
 
 esp_gsp_err_t app_pet_destroy(app_pet_handle_t *pet)

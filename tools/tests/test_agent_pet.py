@@ -19,6 +19,12 @@ TEST_DEVICE_ID = "4553502d495249530100112233445566"
 
 
 class AgentPetTests(unittest.TestCase):
+    def setUp(self):
+        desktop = patch.object(agent_pet, "_desktop_activity", SimpleNamespace(
+            read=lambda now: SimpleNamespace(threads=[], observed_at=now)))
+        desktop.start()
+        self.addCleanup(desktop.stop)
+
     def test_open_windows_log_with_old_mtime_is_still_active(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "session.jsonl"
@@ -74,9 +80,11 @@ class AgentPetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "session.jsonl"
             path.write_text("\n".join(map(json.dumps, (completed, usage))) + "\n", encoding="utf-8")
-            with patch.object(agent_pet, "newest_log", return_value=("Codex", path)), \
-                    patch.object(agent_pet.time, "time", side_effect=(finished_at + 4, finished_at + 5)):
+            with patch.object(agent_pet, "SOURCES", {"Codex": [path.parent]}), \
+                    patch.object(agent_pet, "_session_logs", agent_pet.SessionLogs()), \
+                    patch.object(agent_pet.time, "time", return_value=finished_at + 4) as clock:
                 self.assertEqual(agent_pet.snapshot().state, "done")
+                clock.return_value = finished_at + 5
                 self.assertEqual(agent_pet.snapshot().state, "idle")
 
     def test_pandacode_uses_actual_activity_to_choose_source(self):
@@ -122,7 +130,8 @@ class AgentPetTests(unittest.TestCase):
                     "value": [{"status": status, "completedAt": (base + offset) * 1000}]}
 
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "session.jsonl"
+            path = Path(folder) / "project" / "sessions" / "session.jsonl"
+            path.parent.mkdir(parents=True)
             records = []
 
             def expect(offset, state, calls, *additions):
@@ -132,7 +141,8 @@ class AgentPetTests(unittest.TestCase):
                     result = agent_pet.snapshot()
                 self.assertEqual((result.source, result.state, result.calls), ("PandaCode", state, calls))
 
-            with patch.object(agent_pet, "newest_log", return_value=("PandaCode", path)):
+            with patch.object(agent_pet, "SOURCES", {"PandaCode": [Path(folder)]}), \
+                    patch.object(agent_pet, "_session_logs", agent_pet.SessionLogs()):
                 expect(1, "think", 0, dual("user", 0))
                 expect(2, "shell", 2, assistant(2, "read_file", "run_shell"))
                 expect(3, "ask", 3, assistant(3, "ask_question"))
@@ -281,7 +291,8 @@ class AgentPetTests(unittest.TestCase):
                                    reconnect_interval=2, heartbeat=2)
             current = agent_pet.Snapshot("Codex", "read", "read_file", 1, 0)
             with patch.object(pet_runner, "RUNTIME", runtime), patch.object(pet_runner, "time", fake_time), \
-                    patch.object(pet_runner, "MosaicoClient", return_value=client):
+                    patch.object(pet_runner, "MosaicoClient", return_value=client), \
+                    patch.object(pet_runner, "UsageSync"):
                 self.assertEqual(pet_runner.run_agent(args, lambda: current, agent_pet.STATES), 0)
             self.assertEqual(client.boot, 2)
             self.assertGreaterEqual(len(client.payloads), 4)

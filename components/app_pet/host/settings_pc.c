@@ -154,3 +154,8 @@ void settings_pc_stop(esp_gsp_handle_t ui)
     if (mock.timer) esp_gsp_timer_delete(ui, mock.timer);
     pet_settings_destroy(mock.settings);
 }
+
+pet_settings_handle_t settings_pc_handle(void)
+{
+    return mock.settings;
+}

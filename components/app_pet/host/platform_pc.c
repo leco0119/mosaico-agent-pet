@@ -5,12 +5,18 @@
 #include "app_pet.h"
 #include "gsp_sim_bridge.h"
 #include "settings_pc.h"
+#include "pet_pages.h"
+#include "usage_pc.h"
 
 static struct {
     app_pet_handle_t pet;
+    app_usage_handle_t usage;
+    pet_pages_handle_t pages;
     void *timer;
     unsigned step;
 } backend;
+
+void gsp_bridge_app_deinit(esp_gsp_handle_t ui);
 
 static void voice_demo_tick(esp_gsp_handle_t ui, void *context)
 {
@@ -65,24 +71,37 @@ esp_gsp_err_t gsp_bridge_app_init(esp_gsp_handle_t ui)
 {
     esp_gsp_err_t err = app_pet_create(ui, &backend.pet);
     if (err != ESP_GSP_OK) return err;
+    err = app_usage_create(ui, &backend.usage);
+    fprintf(stderr, "pet_backend: usage controller init=%d\n", (int)err);
+    if (err != ESP_GSP_OK) goto failed;
     const char *mode = getenv("MOSAICO_PET_SIM_CYCLE");
     bool unbound = mode && strcmp(mode, "settings-unbound") == 0;
     err = settings_pc_start(ui, unbound);
-    if (err != ESP_GSP_OK) return err;
+    if (err != ESP_GSP_OK) goto failed;
+    err = pet_pages_create(ui, settings_pc_handle(), backend.pet, backend.usage, &backend.pages);
+    if (err != ESP_GSP_OK) goto failed;
+    err = usage_pc_start(ui, backend.usage);
+    if (err != ESP_GSP_OK) goto failed;
     if (mode && !unbound && strcmp(mode, "settings") != 0) {
         void (*tick)(esp_gsp_handle_t, void *) = strcmp(mode, "voice") == 0 ? voice_demo_tick : demo_tick;
         tick(ui, NULL);
         backend.timer = esp_gsp_timer_create(ui, 2000, tick, NULL);
         if (!backend.timer) {
-            app_pet_destroy(&backend.pet);
-            return ESP_GSP_ERR_NO_MEM;
+            err = ESP_GSP_ERR_NO_MEM;
+            goto failed;
         }
     }
     return ESP_GSP_OK;
+failed:
+    gsp_bridge_app_deinit(ui);
+    return err;
 }
 
 void gsp_bridge_app_deinit(esp_gsp_handle_t ui)
 {
+    pet_pages_destroy(&backend.pages);
+    usage_pc_stop(ui);
+    app_usage_destroy(&backend.usage);
     settings_pc_stop(ui);
     if (backend.timer) esp_gsp_timer_delete(ui, backend.timer);
     app_pet_snapshot_t snapshot;

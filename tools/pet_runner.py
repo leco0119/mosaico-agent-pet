@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 
 from host_runtime import DEFAULT_DEVICE, MosaicoClient, RUNTIME
+from usage_sync import UsageDelivery, UsageSync
 
 
 class SingleInstance:
@@ -51,7 +52,7 @@ def publish_status(**values) -> None:
     temporary.replace(path)
 
 
-def push(current, client: MosaicoClient, states: dict) -> None:
+def push(current, client: MosaicoClient, states: dict) -> dict:
     phrase, animation = states[current.state]
     detail = (f"{current.tool} · {current.calls}次" if current.tool and current.calls
               else current.tool or "--")
@@ -60,6 +61,7 @@ def push(current, client: MosaicoClient, states: dict) -> None:
     response = json.loads(client.rpc("0x0001", payload))
     if response.get("ok") is not True:
         raise RuntimeError(f"Pet update rejected: {response}")
+    return response
 
 
 def run_agent(args, get_snapshot, states, *, reset_stop: bool = True) -> int:
@@ -77,8 +79,12 @@ def run_agent(args, get_snapshot, states, *, reset_stop: bool = True) -> int:
     connected = False
     last_push = last_probe = 0.0
     last_error = None
+    usage = None
     logging.info("Agent Pet started; waiting for USB %s", args.device_id)
     try:
+        usage = UsageSync()
+        delivery = UsageDelivery(usage)
+        usage.start()
         publish_status(running=True, connected=False, device_id=args.device_id)
         while not stop.exists():
             now = time.monotonic()
@@ -107,7 +113,7 @@ def run_agent(args, get_snapshot, states, *, reset_stop: bool = True) -> int:
                     source="Agent Pet", state="idle", tool="", calls=0)
                 key = (current.source, current.state, current.tool, current.calls)
                 if key != shown or now - last_push >= args.heartbeat:
-                    push(current, client, states)
+                    delivery.observe(push(current, client, states))
                     if key != shown:
                         logging.info("%s %s %s %s", *key)
                     shown, last_push = key, time.monotonic()
@@ -115,8 +121,10 @@ def run_agent(args, get_snapshot, states, *, reset_stop: bool = True) -> int:
                     publish_status(running=True, connected=True, device_id=selected_device,
                                    source=current.source, state=current.state,
                                    phrase=states[current.state][0], tool=current.tool, calls=current.calls)
+                delivery.tick(client, time.monotonic())
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
                 connected = False
+                delivery.disconnected()
                 if automatic:
                     client.close()
                 error = str(exc)[-800:]
@@ -127,6 +135,8 @@ def run_agent(args, get_snapshot, states, *, reset_stop: bool = True) -> int:
             time.sleep(args.interval)
     finally:
         try:
+            if usage is not None:
+                usage.close()
             client.close()
             publish_status(running=False, connected=False, device_id=args.device_id)
             stop.unlink(missing_ok=True)

@@ -18,6 +18,8 @@ CMakeCache.txt
 *.elf
 *.map
 *.irisfw
+# Distribute the standalone helper through GitHub Releases.
+/tools/windows/MosaicoAgentPet.exe
 
 # Local runtimes and caches
 .venv*/

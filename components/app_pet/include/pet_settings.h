@@ -21,5 +21,8 @@ esp_gsp_err_t pet_settings_create(esp_gsp_handle_t ui, const pet_settings_ops_t 
                                   pet_settings_handle_t *out);
 void pet_settings_update(pet_settings_handle_t settings, const app_wifi_snapshot_t *wifi,
                          const app_voice_snapshot_t *voice);
+/** Called only by the shared UI dispatcher, on the GSP task. */
+void pet_settings_handle_event(pet_settings_handle_t settings, const esp_gsp_event_t *event);
+void pet_settings_set_active(pet_settings_handle_t settings, bool active);
 /* Caller quiesces GSP before freeing the controller and list callback context. */
 void pet_settings_destroy(pet_settings_handle_t settings);

@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "pet_settings.h"
+#include "pet_pages.h"
 
 #define PET_SERVICE 0x5354u
 #define PET_SET 0x0001u
@@ -23,6 +24,9 @@ static struct {
     app_voice_handle_t voice;
     app_wifi_handle_t wifi;
     pet_settings_handle_t settings;
+    pet_pages_handle_t pages;
+    uint32_t (*read_refresh)(void *);
+    void *refresh_ctx;
     app_wifi_snapshot_t network;
     uint32_t voice_revision;
     SemaphoreHandle_t lock;
@@ -31,6 +35,7 @@ static struct {
     char pending[PET_PAYLOAD_BYTES];
     char inflight[PET_PAYLOAD_BYTES];
     app_pet_snapshot_t snapshot;
+    esp_iris_status_t startup_status; /* instance storage; too large for worker stacks */
 } link;
 
 static bool wifi_scan(void *ctx)
@@ -67,6 +72,13 @@ static void navigation(void *ctx, bool open)
 {
     (void)ctx;
     app_voice_settings_open(link.voice, open);
+}
+
+/* Preserve the original pet-only entry point for existing composition roots. */
+static void pet_only_event(esp_gsp_handle_t ui, const esp_gsp_event_t *event, void *ctx)
+{
+    pet_settings_handle_event(ctx, event);
+    esp_gsp_set_swipe_enabled(ui, false);
 }
 
 static void render_voice(const app_voice_snapshot_t *voice)
@@ -130,15 +142,19 @@ static esp_err_t set_handler(const esp_iris_rpc_request_t *req, uint8_t *respons
                              size_t capacity, size_t *size, void *context)
 {
     (void)context;
-    static const char accepted[] = "{\"ok\":true,\"queued\":true}";
     if (!req || !req->payload || !req->payload_size || !response || !size) return ESP_ERR_INVALID_ARG;
-    if (req->payload_size > PET_PAYLOAD_BYTES || capacity < sizeof(accepted) - 1) return ESP_ERR_INVALID_SIZE;
+    if (req->payload_size > PET_PAYLOAD_BYTES) return ESP_ERR_INVALID_SIZE;
+    int n = snprintf((char *)response, capacity,
+        "{\"ok\":true,\"queued\":true,\"usage_protocol\":%u,\"usage_refresh\":%lu,\"boot_id\":\"%llu\"}",
+        link.read_refresh ? 1u : 0u,
+        (unsigned long)(link.read_refresh ? link.read_refresh(link.refresh_ctx) : 0),
+        (unsigned long long)link.startup_status.boot_id);
+    if (n < 0 || (size_t)n >= capacity) return ESP_ERR_INVALID_SIZE;
     if (xSemaphoreTake(link.lock, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
     memcpy(link.pending, req->payload, req->payload_size);
     link.pending_size = req->payload_size;
     xSemaphoreGive(link.lock);
-    memcpy(response, accepted, sizeof(accepted) - 1);
-    *size = sizeof(accepted) - 1;
+    *size = (size_t)n;
     return ESP_OK;
 }
 
@@ -156,32 +172,60 @@ static esp_err_t status_handler(const esp_iris_rpc_request_t *req, uint8_t *resp
     int n = snprintf((char *)response, capacity,
                      "{\"anim\":%u,\"connected\":%s,\"updates\":%lu,\"last_error\":%d,"
                      "\"voice_state\":%d,\"voice_ready\":%s,\"voice_turns\":%lu,"
-                     "\"wifi_online\":%s,\"volume\":%u}",
+                     "\"wifi_online\":%s,\"volume\":%u,\"usage_protocol\":%u,\"usage_refresh\":%lu,\"boot_id\":\"%llu\"}",
                      snapshot.animation, snapshot.connected ? "true" : "false",
                      (unsigned long)snapshot.updates, (int)snapshot.last_error,
                      voice.state, voice.ready ? "true" : "false", (unsigned long)voice.completed_turns,
-                     app_wifi_link(link.wifi, NULL) ? "true" : "false", (unsigned)voice.volume);
+                     app_wifi_link(link.wifi, NULL) ? "true" : "false", (unsigned)voice.volume,
+                     link.read_refresh ? 1u : 0u,
+                     (unsigned long)(link.read_refresh ? link.read_refresh(link.refresh_ctx) : 0),
+                     (unsigned long long)link.startup_status.boot_id);
     if (n < 0 || (size_t)n >= capacity) return ESP_ERR_INVALID_SIZE;
     *size = (size_t)n;
     return ESP_OK;
 }
 
-esp_err_t status_link_start(app_pet_handle_t pet, esp_gsp_handle_t ui, app_voice_handle_t voice,
-                            app_wifi_handle_t wifi)
+esp_err_t status_link_start_with_usage(app_pet_handle_t pet, esp_gsp_handle_t ui,
+    app_voice_handle_t voice, app_wifi_handle_t wifi, app_usage_handle_t usage,
+    uint32_t (*read_refresh)(void *), void *refresh_ctx)
 {
     if (!pet || !ui || link.pet) return ESP_ERR_INVALID_STATE;
+    esp_err_t identity_err = esp_iris_get_status(&link.startup_status);
+    if (identity_err != ESP_OK) return identity_err;
     link.lock = xSemaphoreCreateMutex();
     if (!link.lock) return ESP_ERR_NO_MEM;
     link.pet = pet;
     link.voice = voice;
     link.wifi = wifi;
+    link.read_refresh = read_refresh;
+    link.refresh_ctx = refresh_ctx;
     static const pet_settings_ops_t ops = {
         .scan = wifi_scan, .connect = wifi_connect, .volume = volume, .preview = preview,
         .check_binding = check_binding, .navigation = navigation,
     };
     if (!link.settings) {
         esp_gsp_err_t settings_err = pet_settings_create(ui, &ops, NULL, &link.settings);
-        if (settings_err != ESP_GSP_OK) ESP_LOGW("pet_link", "Settings UI: %d", (int)settings_err);
+        if (settings_err != ESP_GSP_OK) {
+            link.pet = NULL;
+            vSemaphoreDelete(link.lock);
+            link.lock = NULL;
+            return settings_err;
+        }
+    }
+    if (usage) {
+        esp_gsp_err_t pages_err = pet_pages_create(ui, link.settings, pet, usage, &link.pages);
+        if (pages_err != ESP_GSP_OK) {
+            pet_settings_destroy(link.settings);
+            link.settings = NULL;
+            link.pet = NULL;
+            vSemaphoreDelete(link.lock);
+            link.lock = NULL;
+            return pages_err;
+        }
+    } else {
+        esp_gsp_set_swipe_enabled(ui, false);
+        esp_gsp_err_t event_err = esp_gsp_on_event(ui, pet_only_event, link.settings);
+        if (event_err != ESP_GSP_OK) return event_err;
     }
     link.timer = esp_gsp_timer_create(ui, PET_DISPATCH_MS, dispatch, NULL);
     if (!link.timer) {
@@ -201,4 +245,10 @@ esp_err_t status_link_start(app_pet_handle_t pet, esp_gsp_handle_t ui, app_voice
         link.lock = NULL;
     }
     return err;
+}
+
+esp_err_t status_link_start(app_pet_handle_t pet, esp_gsp_handle_t ui, app_voice_handle_t voice,
+                            app_wifi_handle_t wifi)
+{
+    return status_link_start_with_usage(pet, ui, voice, wifi, NULL, NULL, NULL);
 }

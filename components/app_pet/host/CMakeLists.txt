@@ -21,6 +21,7 @@ endif()
 
 add_subdirectory("${ESP_GSP_COMPONENT_DIR}/tools/sim_bridge" sim_bridge)
 gsp_add_backend(pet_backend
-    SOURCES ../app_pet.c ../pet_settings.c platform_pc.c settings_pc.c
+    SOURCES ../app_pet.c ../pet_settings.c ../pet_pages.c
+        ../usage/app_usage.c ../usage/usage_payload.c platform_pc.c settings_pc.c usage_pc.c
     INCLUDE_DIRECTORIES ../include ../../app_wifi/include ../../app_voice/include
-    SCENES ../ui/main.json)
+    SCENES ../ui/main.json ../ui/usage.json)

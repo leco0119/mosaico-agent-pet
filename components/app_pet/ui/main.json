@@ -5,7 +5,7 @@
   "screen_bg": "#F6F6F3",
   "font": "fonts/DejaVuSans.ttf",
   "default_font_size": 20,
-  "swipe": false,
+  "swipe": true,
   "objects": [
     {
       "type": "container",
@@ -1262,6 +1262,20 @@
           "arg": 8
         }
       ]
+    },
+    {
+      "type": "button",
+      "parent": 0,
+      "x": 334,
+      "y": 12,
+      "w": 64,
+      "h": 48,
+      "text": "1/2 ›",
+      "font": "fonts/NotoSansSC-Regular.ttf",
+      "font_size": 16,
+      "fg_color": "#727773",
+      "bg_color": "#F6F6F3",
+      "callback": "open_usage"
     }
   ]
 }

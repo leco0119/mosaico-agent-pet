@@ -1,0 +1,4 @@
+{"type":"user","uuid":"u1","message":{"role":"user","content":"hi"}}
+{"type":"assistant","uuid":"a1","requestId":"req_1","message":{"id":"msg_1","usage":{"input_tokens":2,"output_tokens":359,"cache_creation_input_tokens":23918,"cache_read_input_tokens":41105}}}
+{"type":"assistant","uuid":"a2","requestId":"req_1","message":{"id":"msg_1","usage":{"input_tokens":2,"output_tokens":359,"cache_creation_input_tokens":23918,"cache_read_input_tokens":41105}}}
+{"type":"assistant","uuid":"a3","requestId":"req_2","message":{"id":"msg_2","usage":{"input_tokens":10,"output_tokens":20,"cache_creation_input_tokens":0,"cache_read_input_tokens":30}}}

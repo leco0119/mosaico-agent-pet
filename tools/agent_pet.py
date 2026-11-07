@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Desk pet: mirror the live state of an AI coding agent on the Mosaico status card.
 
-It tails the most recently written session log among:
+It watches concurrent session logs from:
   WorkBuddy    ~/.workbuddy/projects/*/*.jsonl
   Claude Code  ~/.claude/projects/*/*.jsonl
   Codex        ~/.codex/sessions/**/*.jsonl
   PandaCode    ~/.panda/projects/*/sessions/*.jsonl
-so switching tools needs no configuration: the most recent activity wins.
+so switching tools needs no configuration. Working sessions take precedence
+over completed ones; recency selects the displayed activity within each group.
 
 Each record is reduced to one of a closed set of states whose words are baked
 into the firmware's font_charset. Changes and periodic heartbeats are pushed over USB.
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from desktop_activity import DesktopActivity
 
 
 HOME = Path.home()
@@ -42,6 +44,7 @@ PANDA_TERMINAL_EVENTS = {"completed": "reply", "failed": "error", "cancelled": "
 
 DONE_DISPLAY_SECONDS = 5
 REPLY_SETTLE_SECONDS = 8
+LOG_ACTIVITY_TIMEOUT_SECONDS = 600
 
 # Screen-only states: animation 0 idle, 1 working, 2 waiting, 3 done.
 STATES = {
@@ -59,6 +62,15 @@ class Snapshot:
     tool: str
     calls: int
     age: float
+
+
+@dataclass
+class Session:
+    source: str
+    path: Path
+    signature: tuple[int, int]
+    activity: float
+    events: list[tuple[str, str, float]]
 
 
 def event_time(records: list[dict], fallback: float) -> float:
@@ -84,10 +96,9 @@ class SessionLogs:
     event timestamps also let a resumed older session outrank a newer idle one.
     """
     def __init__(self):
-        self.cache: dict[Path, tuple[int, int, float]] = {}
+        self.cache: dict[Path, Session] = {}
 
-    def newest(self) -> tuple[str, Path] | None:
-        best = None
+    def sessions(self) -> list[Session]:
         seen = set()
         for source, roots in SOURCES.items():
             for root in roots:
@@ -99,26 +110,34 @@ class SessionLogs:
                         stat = path.stat()
                         signature = (stat.st_size, stat.st_mtime_ns)
                         old = self.cache.get(path)
-                        if old and old[:2] == signature:
-                            activity = old[2]
-                        else:
+                        if old is None or old.signature != signature or old.source != source:
+                            records = tail_records(path)
                             if source == PANDA_SOURCE:
-                                events = panda_events(tail_records(path))
+                                events = panda_events(records)
                                 activity = events[-1][2] if events else 0.0
                             else:
                                 fallback = time.time() if old else stat.st_mtime
-                                activity = event_time(tail_records(path, 64_000), fallback)
-                            self.cache[path] = (*signature, activity)
+                                activity = event_time(records, fallback)
+                                events = [
+                                    (event[0], event[1] if isinstance(event[1], str) else "",
+                                     event_time([record], fallback))
+                                    for record in records
+                                    if (event := classify(record)) is not None
+                                ]
+                            self.cache[path] = Session(source, path, signature, activity, events)
                         seen.add(path)
                     except OSError:
                         continue
-                    if activity and (best is None or activity > best[0]):
-                        best = (activity, source, path)
         self.cache = {path: entry for path, entry in self.cache.items() if path in seen}
-        return (best[1], best[2]) if best else None
+        return list(self.cache.values())
+
+    def newest(self) -> tuple[str, Path] | None:
+        best = max(self.sessions(), key=lambda session: session.activity, default=None)
+        return (best.source, best.path) if best and best.activity else None
 
 
 _session_logs = SessionLogs()
+_desktop_activity = DesktopActivity()
 
 
 def newest_log() -> tuple[str, Path] | None:
@@ -234,6 +253,8 @@ def classify(rec: dict) -> tuple[str, str] | None:
         content = rec["message"].get("content")
         if isinstance(content, list):
             for part in reversed(content):
+                if not isinstance(part, dict):
+                    continue
                 if part.get("type") == "tool_use":
                     return "call", part.get("name", "")
                 if part.get("type") == "tool_result":
@@ -260,29 +281,12 @@ def classify(rec: dict) -> tuple[str, str] | None:
     return None
 
 
-def snapshot() -> Snapshot | None:
-    found = newest_log()
-    if not found:
-        return None
-    source, path = found
-    records = tail_records(path)
-    now = time.time()
-    fallback = path.stat().st_mtime
-    if source == PANDA_SOURCE:
-        events = panda_events(records)
-        if not events:
-            return None
-        activity = events[-1][2]
-    else:
-        activity = event_time(records, fallback)
-        events = [
-            (event[0], event[1], event_time([record], fallback))
-            for record in records
-            if (event := classify(record)) is not None
-        ]
-    age = max(0, now - activity)
+def session_snapshot(session: Session, now: float, confirmed_active: bool = False) -> Snapshot:
+    source, events = session.source, session.events
+    # Metadata writes must not revive an abandoned turn or postpone completion.
+    age = max(0, now - (events[-1][2] if events else session.activity))
     if not events:
-        return Snapshot(source, "idle", "", 0, age)
+        return Snapshot(source, "think" if confirmed_active else "idle", "", 0, age)
     # Tool calls since the latest user message = progress counter.
     calls = 0
     for ev, _, _ in reversed(events):
@@ -312,9 +316,42 @@ def snapshot() -> Snapshot | None:
             state = "done"
         else:
             state = "idle"
-    if state not in ("done", "ask", "error") and age > 600:
+    if confirmed_active and state in ("idle", "done"):
+        state = "think"
+    elif not confirmed_active and age > LOG_ACTIVITY_TIMEOUT_SECONDS:
         state = "idle"
     return Snapshot(source, state, last_tool.split("__")[-1][:20], calls, age)
+
+
+def snapshot() -> Snapshot | None:
+    now = time.time()
+    desktop = _desktop_activity.read(now)
+    local_tasks = {task.thread_id: task for task in desktop.threads
+                   if task.source == "Codex" and task.host_id == "local"}
+    candidates = []
+    covered = set()
+    for session in _session_logs.sessions():
+        # Rollout names end in the conversation UUID, including resumed logs.
+        ident = session.path.stem[-36:] if session.source == "Codex" else ""
+        task = local_tasks.get(ident)
+        current = session_snapshot(session, now, confirmed_active=task is not None and task.state == "think")
+        if task is not None:
+            covered.add(ident)
+            if task.state == "idle" and session.activity <= desktop.observed_at and current.state != "done":
+                current.state = "idle"
+        candidates.append(current)
+    for task in desktop.threads:
+        if task.source == "Codex" and task.host_id == "local" and task.thread_id in covered:
+            continue
+        candidates.append(Snapshot(task.source, task.state, "", 0, max(0, now - task.updated_at)))
+    return select_snapshot(candidates)
+
+
+def select_snapshot(candidates: list[Snapshot]) -> Snapshot | None:
+    def priority(item: Snapshot) -> tuple[int, float]:
+        working = item.state not in ("idle", "done", "error", "ask")
+        return (2 if working else 1 if item.state == "ask" else 0, -item.age)
+    return max(candidates, key=priority, default=None)
 
 
 def main() -> int:

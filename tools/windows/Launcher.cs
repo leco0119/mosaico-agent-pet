@@ -164,7 +164,7 @@ internal sealed class SyncWindow : Form
         File.Delete(Path.Combine(logFolder, "stop"));
         File.Delete(Path.Combine(logFolder, "status.json"));
         var heading = new Label {
-            Text = "Mosaico 桌宠同步", Font = new Font(Font, FontStyle.Bold), AutoSize = true,
+            Text = "Mosaico 桌宠与用量同步", Font = new Font(Font, FontStyle.Bold), AutoSize = true,
             Location = new Point(18, 16)
         };
         status.Text = "正在启动同步助手…";
@@ -268,7 +268,7 @@ internal sealed class SyncWindow : Form
             {
                 state.TryGetValue("source", out source);
                 state.TryGetValue("phrase", out phrase);
-                status.Text = "已连接 · " + source + " · " + phrase + "\n拔线后自动等待下次连接。";
+                status.Text = "已连接 · " + source + " · " + phrase + "\nCodex 用量自动更新，第二屏可点击刷新。";
             }
             else if (state.TryGetValue("error", out error))
             {

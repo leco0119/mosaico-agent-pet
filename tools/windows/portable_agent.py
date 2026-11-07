@@ -50,6 +50,16 @@ def prepare_iris() -> Path:
 
 
 def smoke_test(python: Path) -> int:
+    from desktop_activity import DesktopActivity, DesktopStatus
+    from usage_sync import UsageDelivery, UsageSync
+    from usage_agent import codex_rpc, codex_source, payload, snapshot, textfmt
+    # Import every collector dependency using the isolated bundled interpreter.
+    # No official account query is made by this installation check.
+    assert UsageDelivery and UsageSync and codex_rpc and snapshot and textfmt
+    assert DesktopActivity and DesktopStatus
+    encoded = payload.encode({"codex": {**codex_source.EMPTY, "tokens_text": "5.15B"}})
+    if "r.tokens=5.15B" not in encoded:
+        raise RuntimeError("Bundled usage encoder is unavailable")
     client = MosaicoClient(None)
     # list is discovery only. It does not claim a USB port or change the board.
     discovery = client.call("list", "--details", select=False)
@@ -62,6 +72,9 @@ def smoke_test(python: Path) -> int:
         "python_version": sys.version.split()[0],
         "discovery": discovery.get("status"),
         "visible_endpoints": len(discovery.get("endpoints", [])),
+        "usage_modules": True,
+        "desktop_activity_module": True,
+        "usage_protocol": 1,
     }
     (ROOT / "portable-smoke.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return 0

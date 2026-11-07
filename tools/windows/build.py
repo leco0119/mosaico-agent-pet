@@ -47,6 +47,11 @@ def package_runtime(archive: ZipFile, embedded_zip: Path, iris_environment: Path
     if (iris_environment / ".mosaico-requirements").read_text(encoding="utf-8") != fingerprint:
         raise ValueError("The specified Iris environment does not match the project's lock.")
     package_root = (iris_environment / "Lib/site-packages").resolve()
+    if not package_root.is_dir():
+        # The existing portable launcher seeds dependencies next to python.exe.
+        package_root = (iris_environment / "Scripts/Lib/site-packages").resolve()
+    if not package_root.is_dir():
+        raise ValueError("The Iris environment has no dependency directory.")
     expected: dict[str, set[str]] = {}
     for line in LOCK.read_text(encoding="utf-8").splitlines():
         match = re.match(r"^([a-zA-Z0-9_.-]+)==([^\s;]+)", line)
@@ -85,7 +90,9 @@ def package_workspace(archive: ZipFile) -> None:
         UTILS / "LICENSES.md",
         UTILS / "esp-mosaico-vibe-mode/product_contract.json",
         IRIS / "idf_component.yml",
-        *[PROJECT / "tools" / name for name in ("agent_pet.py", "pet_runner.py", "host_runtime.py")],
+        *[PROJECT / "tools" / name for name in (
+            "agent_pet.py", "desktop_activity.py", "pet_runner.py", "host_runtime.py", "usage_sync.py")],
+        *sorted((PROJECT / "tools/usage_agent").glob("*.py")),
         *[IRIS / "tools" / name for name in ("esp_iris.py", "requirements.lock", "rpc_catalog.json",
                                             "system_update_bundle.py")],
     ]
